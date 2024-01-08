@@ -1,0 +1,308 @@
+
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <unistd.h>
+#include <arpa/inet.h>
+#include <stdbool.h>
+#include <errno.h>
+
+#define PORT 12345
+#define BUFFER_SIZE 10000
+#define CHUNK_SIZE 250
+#define FILENAME "stored_data.txt"
+
+// Struct for received chunks with sequence numbers
+struct ReceivedChunk {
+    int sequence_number;
+    int complete;
+    char data[CHUNK_SIZE];
+};
+struct AckPacket {
+    int sequence_number;
+};
+void handle_error(const char *message) {
+    perror(message);
+    exit(EXIT_FAILURE);
+}
+
+int main() {
+    int sockfd;
+    struct sockaddr_in server_addr, client_addr;
+    socklen_t addr_len = sizeof(client_addr);
+    struct ReceivedChunk received_chunk,send_chunk;
+    FILE *file = NULL;
+
+    // Create UDP socket
+    if ((sockfd = socket(AF_INET, SOCK_DGRAM, 0)) == -1) {
+        handle_error("Socket creation failed");
+    }
+
+    // Initialize server address
+    memset(&server_addr, 0, sizeof(server_addr));
+    server_addr.sin_family = AF_INET;
+    server_addr.sin_port = htons(PORT);
+    server_addr.sin_addr.s_addr = INADDR_ANY;
+
+    // Bind socket to server address
+    if (bind(sockfd, (struct sockaddr *)&server_addr, sizeof(server_addr)) == -1) {
+        handle_error("Binding failed");
+    }
+
+    printf("UDP server is running on port %d...\n", PORT);
+
+    while (true) {
+        // Receive a packet from the client
+        ssize_t recv_len = recvfrom(sockfd, &received_chunk, sizeof(received_chunk), 0, (struct sockaddr *)&client_addr, &addr_len);
+        if (recv_len == -1) {
+            handle_error("Receive error");
+        } else {
+           /* struct AckPacket ack;
+            ack.sequence_number = received_chunk.sequence_number;
+            if (sendto(sockfd, &ack, sizeof(ack), 0, (struct sockaddr *)&client_addr, addr_len) == -1) {
+                handle_error("ACK Send error");
+            }*/
+            if (received_chunk.complete == 1) {
+    if (file == NULL) {
+        // Open the file for appending and reading
+        file = fopen(FILENAME, "a+");
+        if (file == NULL) {
+            handle_error("File opening failed");
+        }
+    }
+    // Append the data to the file
+    fputs(received_chunk.data, file);
+
+    // Close the file to flush changes
+    fclose(file);
+    file = NULL;
+
+    // Reopen the file in read mode
+    file = fopen(FILENAME, "r");
+    if (file == NULL) {
+        perror("File opening failed");
+        return 1; // Return an error code
+    }
+    printf("Received response from client\n");
+    // Print the entire file from the start
+    char buffer[BUFFER_SIZE];
+    while (fgets(buffer, sizeof(buffer), file) != NULL) {
+        printf("%s", buffer);
+    }
+
+    // Close the file after reading
+    fclose(file);
+    file = NULL;
+
+    // Erase the total data from the file
+    file = fopen(FILENAME, "w"); // Use "w" to truncate the file
+    if (file == NULL) {
+        handle_error("File opening failed");
+    }
+    fclose(file);
+    file = NULL;
+}
+ else {
+                // Open the file for appending
+                if (file == NULL) {
+                    file = fopen(FILENAME, "a");
+                    if (file == NULL) {
+                        handle_error("File opening failed");
+                    }
+                }
+                // Append the data to the file
+                fputs(received_chunk.data, file);
+            }
+        }
+
+        // Check for messages to send to the client
+        if (received_chunk.complete == 1) {
+            char input_buffer[BUFFER_SIZE];
+            printf("\nEnter message to send to the client (or type 'exit' to quit): ");
+            if (fgets(input_buffer, sizeof(input_buffer), stdin) != NULL) {
+                if (strncmp(input_buffer, "exit", 4) == 0) {
+                    printf("Exiting...\n");
+                    break;
+                }
+                int total_chunks = strlen(input_buffer) / CHUNK_SIZE;
+                if (strlen(input_buffer) % CHUNK_SIZE != 0) {
+                total_chunks++;
+                }
+                // Send the data to the client
+                for (int i = 0; i < total_chunks; i++) {
+                send_chunk.sequence_number = i;
+            if (i == total_chunks - 1) {
+                send_chunk.complete = 1;
+            } else {
+                send_chunk.complete = 0;
+            }
+                strncpy(send_chunk.data, input_buffer, sizeof(send_chunk.data));
+                if (sendto(sockfd, &send_chunk, sizeof(send_chunk), 0, (struct sockaddr *)&client_addr, addr_len) == -1) {
+                    handle_error("Send error");
+                }
+            }
+        }
+    }
+    }
+    // Close the file if it's open
+    if (file != NULL) {
+        fclose(file);
+    }
+
+    // Close the socket
+    close(sockfd);
+
+    return 0;
+}
+
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <unistd.h>
+#include <arpa/inet.h>
+#include <stdbool.h>
+#include <errno.h>
+#define SERVER_IP "127.0.0.1"
+#define SERVER_PORT 12345
+#define BUFFER_SIZE 10000
+#define CHUNK_SIZE 250
+#define FILENAME "stored_data.txt"
+#define TIMEOUT_SEC 0
+#define TIMEOUT_USEC 100000 
+// Struct for chunks with sequence numbers
+struct Chunk {
+    int sequence_number;
+    int complete;
+    char data[CHUNK_SIZE];
+};
+struct AckPacket {
+    int sequence_number;
+};
+void handle_error(const char *message) {
+    perror(message);
+    exit(EXIT_FAILURE);
+}
+
+int main() {
+    int sockfd;
+    struct sockaddr_in server_addr;
+    struct Chunk send_chunk, received_chunk;
+    int total_chunks = 0;
+    char input_buffer[BUFFER_SIZE];
+    FILE *file = NULL;
+    // Create UDP socket
+    if ((sockfd = socket(AF_INET, SOCK_DGRAM, 0)) == -1) {
+        handle_error("Socket creation failed");
+    }
+    // Initialize server address
+    memset(&server_addr, 0, sizeof(server_addr));
+    server_addr.sin_family = AF_INET;
+    server_addr.sin_port = htons(SERVER_PORT);
+    if (inet_pton(AF_INET, SERVER_IP, &server_addr.sin_addr) <= 0) {
+        handle_error("Invalid server address");
+    }
+
+    printf("UDP client is running...\n");
+    while (true) {
+        printf("\nEnter message to send (or type 'exit' to quit): ");
+        if (fgets(input_buffer, sizeof(input_buffer), stdin) == NULL) {
+            handle_error("Input error");
+        }
+        if (strncmp(input_buffer, "exit", 4) == 0) {
+            printf("Exiting...\n");
+            break;
+        }
+        // Calculate the total number of chunks
+        int total_chunks = strlen(input_buffer) / CHUNK_SIZE;
+        if (strlen(input_buffer) % CHUNK_SIZE != 0) {
+            total_chunks++;
+        }
+        // Send the data in chunks to the server
+        for (int i = 0; i < total_chunks; i++) {
+            send_chunk.sequence_number = i;
+            
+            // Check if it's the last chunk
+            if (i == total_chunks - 1) {
+                send_chunk.complete = 1;
+            } else {
+                send_chunk.complete = 0;
+            }
+
+            // Copy the chunk of data into the send_chunk
+            strncpy(send_chunk.data, input_buffer + i * CHUNK_SIZE, CHUNK_SIZE);
+
+            // Send the chunk to the server
+            if (sendto(sockfd, &send_chunk, sizeof(send_chunk), 0, (struct sockaddr *)&server_addr, sizeof(server_addr)) == -1) {
+                handle_error("Send error");
+            }
+        }
+    while (true){
+        // Receive a response from the server
+        ssize_t recv_len = recvfrom(sockfd, &received_chunk, sizeof(received_chunk), 0, NULL, NULL);
+       // printf("Hai,%d\n",received_chunk.sequence_number);
+        if (recv_len == -1) {
+            handle_error("Receive error");
+        } else {
+            if (received_chunk.complete == 1) {
+         if (file == NULL) {
+        // Open the file for appending and reading
+        file = fopen(FILENAME, "a+");
+        if (file == NULL) {
+            handle_error("File opening failed");
+        }
+    }
+    // Append the data to the file
+    fputs(received_chunk.data, file);
+    // Close the file to flush changes
+    fclose(file);
+    file = NULL;
+    // Reopen the file in read mode
+    file = fopen(FILENAME, "r");
+    if (file == NULL) {
+        perror("File opening failed");
+        return 1; // Return an error code
+    }
+    printf("Received response from server\n");
+    // Print the entire file from the start
+    char buffer[BUFFER_SIZE];
+    while (fgets(buffer, sizeof(buffer), file) != NULL) {
+        printf("%s", buffer);
+    }
+    // Close the file after reading
+    fclose(file);
+    file = NULL;
+    // Erase the total data from the file
+    file = fopen(FILENAME, "w"); // Use "w" to truncate the file
+    if (file == NULL) {
+        handle_error("File opening failed");
+    }
+    fclose(file);
+    file = NULL;
+    break;
+}
+ else {
+                // Open the file for appending
+                if (file == NULL) {
+                    file = fopen(FILENAME, "a");
+                    if (file == NULL) {
+                        handle_error("File opening failed");
+                    }
+                }
+                // Append the data to the file
+                fputs(received_chunk.data, file);
+            }
+        }
+    }
+    }
+
+    // Close the socket
+    close(sockfd);
+
+    return 0;
+}
+
+
+
+
+
+//handle multiple chunks dat from server to client
