@@ -22,5 +22,5 @@
 10. When it sends zero we can just stop sending for some time and then decrease window size and then start sending them.  
 11. The another primitive way is known as "STOP AND WAIT" which is typically done in the process where the sender sends the data continuously and receiver starts processing it, it sends acknowledgement to the sender with the byte number till which it can process the data.
   
-
+qr
 
